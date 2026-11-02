@@ -371,7 +371,7 @@ function renderPlayer() {
     return;
   }
   if (playerPeer) playerPeer.destroy();
-  renderShell(\`<main class="player-page container"><div class="player-card-panel text-center"><div class="player-icon">🎱</div><span class="section-kicker">CONECTANDO À SALA</span><h1>Preparando sua<br/><span class="text-gradient">cartela...</span></h1><p>Conectando seu celular ao organizador. Isso pode levar alguns segundos.</p><div class="spinner-border mt-3" role="status"></div></div></main>\`, "player");
+  renderShell(`<main class="player-page container"><div class="player-card-panel text-center"><div class="player-icon">🎱</div><span class="section-kicker">CONECTANDO À SALA</span><h1>Preparando sua<br/><span class="text-gradient">cartela...</span></h1><p>Conectando seu celular ao organizador. Isso pode levar alguns segundos.</p><div class="spinner-border mt-3" role="status"></div></div></main>`, "player");
   playerPeer = new Peer();
   playerPeer.on("open", () => {
     playerConnection = playerPeer.connect(hostId, { reliable: true });
@@ -394,7 +394,7 @@ function renderPlayer() {
 }
 
 function showPlayerConnectionError() {
-  renderShell(\`<main class="player-page container"><div class="player-card-panel text-center"><div class="player-icon">📡</div><span class="section-kicker">SALA NÃO ENCONTRADA</span><h1>Ops! A conexão<br/><span class="text-gradient">caiu.</span></h1><p>Peça ao organizador para manter a tela aberta e gerar um novo QR Code. Confira se os dois dispositivos têm internet.</p><a href="./" class="btn btn-primary rounded-pill px-4">Voltar ao início</a></div></main>\`, "player");
+  renderShell(`<main class="player-page container"><div class="player-card-panel text-center"><div class="player-icon">📡</div><span class="section-kicker">SALA NÃO ENCONTRADA</span><h1>Ops! A conexão<br/><span class="text-gradient">caiu.</span></h1><p>Peça ao organizador para manter a tela aberta e gerar um novo QR Code. Confira se os dois dispositivos têm internet.</p><a href="./" class="btn btn-primary rounded-pill px-4">Voltar ao início</a></div></main>`, "player");
 }
 
 function renderPlayerScreen() {
@@ -407,7 +407,7 @@ function renderPlayerScreen() {
       <section class="player-card-panel"><div class="player-card-head"><div><span class="section-kicker">SUA CARTELA</span><h2>Marque seus números</h2></div><button class="btn btn-soft rounded-pill" id="new-card"><i class="bi bi-arrow-repeat me-1"></i>Nova cartela</button></div><div class="bingo-card"><div class="bingo-letters">\${LETTERS.map(letter=>\`<b>\${letter}</b>\`).join("")}</div><div class="bingo-grid">\${playerCard.card.flat().map(value=>\`<button class="bingo-cell \${value==="★"?"free-cell":""} \${markedNumbers.has(value)?"marked":""}" data-value="\${value}" \${value==="★"?"disabled":""}>\${value}</button>\`).join("")}</div></div><div class="player-card-foot"><span><i class="bi bi-hand-index-thumb"></i> Toque para marcar</span><span id="marked-count">\${markedNumbers.size} marcados</span></div><button class="btn btn-primary btn-lg rounded-pill w-100 mt-4" id="claim-bingo"><i class="bi bi-trophy me-2"></i>BINGO!</button></section>
       <section class="player-recent"><span class="section-kicker">ÚLTIMOS NÚMEROS</span><div class="history-list">\${knownRoom.called.slice(-5).reverse().map((n,i)=>\`<div class="history-ball \${i===0?"latest":""}"><small>\${getLetter(n)}</small><b>\${n}</b></div>\`).join("") || '<span class="history-empty">Aguardando o primeiro sorteio.</span>'}</div></section>
       <div class="demo-warning"><i class="bi bi-wifi"></i><span>Conectado diretamente ao organizador. Sorteios sincronizados em tempo real.</span></div>
-    </main>\`, "player");
+    </main>`, "player");
   document.querySelectorAll(".bingo-cell:not(.free-cell)").forEach(cell => {
     cell.addEventListener("click", () => {
       const value = Number(cell.dataset.value);
