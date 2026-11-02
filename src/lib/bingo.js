@@ -8,8 +8,9 @@ export function createCard() {
     range(46, 60),
     range(61, 75)
   ];
+  const selectedColumns = columns.map((column) => shuffle(column).slice(0, 5));
   const card = Array.from({ length: 5 }, (_, row) =>
-    columns.map((column) => shuffle(column).slice(0, 5)[row])
+    selectedColumns.map((column) => column[row])
   );
   card[2][2] = "★";
   return card;
