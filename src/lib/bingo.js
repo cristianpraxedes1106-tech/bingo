@@ -35,7 +35,8 @@ export function drawNumber(pool) {
 }
 
 export function hasBingo(card, calledNumbers, mode = "line") {
-  const marked = (value) => value === "★" || calledNumbers.includes(value);
+  const called = new Set((calledNumbers || []).map(Number));
+  const marked = (value) => value === "★" || called.has(Number(value));
   const rows = card.map((row) => row.every(marked));
   const columns = card[0].map((_, col) => card.every((row) => marked(row[col])));
   const diagonals = [
@@ -44,11 +45,13 @@ export function hasBingo(card, calledNumbers, mode = "line") {
   ];
   const corners = [card[0][0], card[0][4], card[4][0], card[4][4]].every(marked);
 
+  if (!Array.isArray(card) || card.length !== 5 || card.some(row => !Array.isArray(row) || row.length !== 5)) return false;
   if (mode === "full") return card.flat().every(marked);
   if (mode === "column") return columns.some(Boolean);
   if (mode === "diagonal") return diagonals.some(Boolean);
   if (mode === "corners") return corners;
-  return rows.some(Boolean);
+  if (mode === "line" || mode === "row" || mode === "horizontal") return rows.some(Boolean) || columns.some(Boolean);
+  return rows.some(Boolean) || columns.some(Boolean);
 }
 
 function range(start, end) {
