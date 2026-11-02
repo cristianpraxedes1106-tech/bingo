@@ -75,7 +75,7 @@ function roomUrl() {
   return url.toString();
 }
 function publicRoomState() {
-  return { code: room.code, title: room.title, prize: room.prize, mode: room.mode, status: room.status, started: room.started, called: room.called };
+  return { code: room.code, title: room.title, prize: room.prize, mode: room.mode, status: room.status, started: room.started, called: room.called, showdown: room.showdown || null };
 }
 function broadcastRoomState() {
   const message = { type: "state", room: publicRoomState() };
@@ -95,8 +95,28 @@ async function startHostNetwork() {
     connection.on("data", message => {
       if (message?.type === "claim" && Array.isArray(message.card)) {
         const valid = hasBingo(message.card, room.called, room.mode);
+        const playerId = connection.peer;
+        if (valid && !room.showdown?.contestants?.some(person => person.id === playerId)) {
+          room.showdown ||= { phase: "claims", contestants: [], active: [], winners: [], pairs: [], pairIndex: 0, usedNumbers: [], log: [], champion: null, round: 1, currentPair: null, tie: false };
+          if (room.showdown.phase === "claims") room.showdown.contestants.push({ id: playerId, name: `Participante ${room.showdown.contestants.length + 1}`, choice: null });
+          saveRoom();
+          broadcastRoomState();
+          Swal.fire({ title: "BINGO anunciado!", text: "Um participante completou o padrão vencedor.", icon: "success" });
+        }
         connection.send({ type: "claim-result", valid });
-        if (valid) Swal.fire({ title: "BINGO anunciado!", text: "Um participante completou o padrão vencedor.", icon: "success" });
+      }
+      if (message?.type === "showdown-choice") {
+        const showdown = room.showdown;
+        const player = showdown?.contestants?.find(person => person.id === connection.peer);
+        const number = Number(message.number);
+        const opponent = showdown?.currentPair?.find(id => id !== connection.peer);
+        const opponentChoice = showdown?.contestants?.find(person => person.id === opponent)?.choice;
+        const allowed = showdown?.phase === "duel" && showdown.currentPair?.includes(connection.peer) && Number.isInteger(number) && number >= 1 && number <= 75 && !room.called.includes(number) && !showdown.usedNumbers.includes(number) && (opponentChoice == null || Math.abs(number - opponentChoice) >= 2);
+        if (player && allowed && player.choice == null) {
+          player.choice = number;
+          showdown.usedNumbers.push(number);
+          saveRoom(); broadcastRoomState();
+        }
       }
     });
     connection.on("close", () => playerConnections.delete(connection));
@@ -176,6 +196,91 @@ async function askRoomCode() {
   }
 }
 
+function prepareShowdownRound() {
+  const showdown = room.showdown;
+  if (!showdown) return;
+  if (showdown.active.length <= 1) {
+    showdown.champion = showdown.active[0] || showdown.winners[0] || null;
+    showdown.phase = "finished";
+    room.status = "finished";
+    saveRoom(); broadcastRoomState(); renderHost();
+    const winner = showdown.contestants.find(person => person.id === showdown.champion);
+    Swal.fire({ title: "Desempate concluído!", text: winner ? `${winner.name} venceu o BINGO!` : "Não houve vencedor.", icon: "success" });
+    return;
+  }
+  showdown.pairs = [];
+  showdown.winners = [];
+  for (let i = 0; i < showdown.active.length; i += 2) {
+    if (i + 1 < showdown.active.length) showdown.pairs.push([showdown.active[i], showdown.active[i + 1]]);
+    else showdown.winners.push(showdown.active[i]); // bye automático em número ímpar
+  }
+  showdown.pairIndex = 0;
+  showdown.currentPair = showdown.pairs[0] || null;
+  showdown.tie = false;
+  for (const id of showdown.currentPair || []) {
+    const person = showdown.contestants.find(item => item.id === id);
+    if (person) person.choice = null;
+  }
+  saveRoom(); broadcastRoomState(); renderHost();
+}
+
+function startShowdown() {
+  const showdown = room.showdown;
+  if (!showdown || showdown.phase !== "claims" || showdown.contestants.length < 2) return;
+  showdown.phase = "duel";
+  showdown.active = showdown.contestants.map(person => person.id);
+  showdown.round = 1;
+  prepareShowdownRound();
+}
+
+function resolveShowdownDuel() {
+  const showdown = room.showdown;
+  if (!showdown || showdown.phase !== "duel" || !showdown.currentPair) return;
+  const pair = showdown.currentPair.map(id => showdown.contestants.find(person => person.id === id));
+  if (pair.some(person => !person || person.choice == null)) return;
+  const number = drawNumber(room.pool);
+  if (number == null) {
+    room.status = "finished"; showdown.phase = "finished"; saveRoom(); broadcastRoomState(); renderHost();
+    return Swal.fire("Fim de jogo", "Não há mais números para decidir o desempate.", "warning");
+  }
+  room.called.push(number);
+  const distanceA = Math.abs(number - pair[0].choice);
+  const distanceB = Math.abs(number - pair[1].choice);
+  if (distanceA === distanceB) {
+    showdown.tie = true;
+    showdown.log.push({ round: showdown.round, a: pair[0].name, b: pair[1].name, draw: number, result: "Empate — novo sorteio" });
+    saveRoom(); broadcastRoomState(); renderHost();
+    return Swal.fire({ title: `${getLetter(number)}-${number}: empate!`, text: "Os dois escolheram números à mesma distância. Sorteie novamente para decidir este confronto.", icon: "info" });
+  }
+  const winner = distanceA < distanceB ? pair[0] : pair[1];
+  showdown.winners.push(winner.id);
+  showdown.log.push({ round: showdown.round, a: pair[0].name, b: pair[1].name, draw: number, result: winner.name });
+  showdown.pairIndex += 1;
+  showdown.tie = false;
+  if (showdown.pairIndex < showdown.pairs.length) {
+    showdown.currentPair = showdown.pairs[showdown.pairIndex];
+    for (const id of showdown.currentPair) {
+      const person = showdown.contestants.find(item => item.id === id);
+      if (person) person.choice = null;
+    }
+    saveRoom(); broadcastRoomState(); renderHost();
+  } else {
+    showdown.active = [...showdown.winners];
+    showdown.round += 1;
+    prepareShowdownRound();
+  }
+}
+
+function renderShowdownHost() {
+  const showdown = room.showdown;
+  if (!showdown) return "";
+  const contestants = showdown.contestants.map(person => `<div class="showdown-person"><span>${escapeHtml(person.name)}</span><b>${person.choice ?? "Aguardando número"}</b></div>`).join("");
+  const pair = showdown.currentPair?.map(id => showdown.contestants.find(person => person.id === id)).filter(Boolean) || [];
+  const duel = pair.length === 2 ? `<p class="showdown-match">${escapeHtml(pair[0].name)} <strong>VS</strong> ${escapeHtml(pair[1].name)}</p><p class="showdown-help">Cada pessoa escolhe um número diferente, sem ficar a menos de 2 unidades do número escolhido pelo adversário. Depois, o próximo sorteio decide quem ficou mais perto.</p>` : "";
+  const history = showdown.log.map(item => `<div class="showdown-result"><span>Rodada ${item.round}: ${escapeHtml(item.a)} × ${escapeHtml(item.b)}</span><b>${item.draw} → ${escapeHtml(item.result)}</b></div>`).join("");
+  return `<section class="side-card showdown-card"><div class="side-card-head"><span class="section-kicker">DESEMPATE · ELIMINATÓRIA</span><i class="bi bi-trophy"></i></div><p class="showdown-status">${showdown.phase === "claims" ? `${showdown.contestants.length} BINGO(s) confirmado(s)` : showdown.phase === "finished" ? "Desempate finalizado" : `Rodada ${showdown.round} · confronto ${showdown.pairIndex + 1} de ${showdown.pairs.length}`}</p>${contestants}${duel}${showdown.phase === "claims" && showdown.contestants.length >= 2 ? '<button class="btn btn-primary w-100 mt-3" id="start-showdown">Iniciar desempate</button>' : ""}${showdown.phase === "duel" && pair.length === 2 && pair.every(person => person.choice != null) ? '<button class="btn btn-primary w-100 mt-3" id="resolve-showdown">Sortear confronto</button>' : ""}${showdown.champion ? `<p class="showdown-champion">🏆 ${escapeHtml(showdown.contestants.find(person => person.id === showdown.champion)?.name || "Vencedor")}</p>` : ""}${history}</section>`;
+}
+
 function renderHost() {
   if (!room) return renderLanding();
   const setup = !room.started;
@@ -227,6 +332,7 @@ function renderHost() {
             </div>
           </div>
           <div class="history-block"><div class="subheading"><span>ÚLTIMOS NÚMEROS</span><small>Mais recente primeiro</small></div><div class="history-list">${renderHistory()}</div></div>
+          ${renderShowdownHost()}
           <div class="called-board"><div class="subheading"><span>PAINEL DE NÚMEROS</span><small>75 bolas</small></div><div class="number-board">${renderNumberBoard()}</div></div>
         </section>
         <aside class="side-column">
@@ -292,6 +398,8 @@ function bindHostEvents() {
     return;
   }
   document.querySelector("#draw-now").addEventListener("click", drawNext);
+  document.querySelector("#start-showdown")?.addEventListener("click", startShowdown);
+  document.querySelector("#resolve-showdown")?.addEventListener("click", resolveShowdownDuel);
   document.querySelector("#toggle-pause").addEventListener("click", () => {
     room.status = room.status === "paused" ? "playing" : "paused";
     saveRoom(); broadcastRoomState(); renderHost();
@@ -397,6 +505,26 @@ function showPlayerConnectionError() {
   renderShell(`<main class="player-page container"><div class="player-card-panel text-center"><div class="player-icon">📡</div><span class="section-kicker">SALA NÃO ENCONTRADA</span><h1>Ops! A conexão<br/><span class="text-gradient">caiu.</span></h1><p>Peça ao organizador para manter a tela aberta e gerar um novo QR Code. Confira se os dois dispositivos têm internet.</p><a href="./" class="btn btn-primary rounded-pill px-4">Voltar ao início</a></div></main>`, "player");
 }
 
+function renderShowdownPlayer(knownRoom) {
+  const showdown = knownRoom.showdown;
+  if (!showdown) return "";
+  const myId = playerPeer?.id;
+  const me = showdown.contestants?.find(person => person.id === myId);
+  if (!me) return "";
+  if (showdown.phase === "finished") {
+    const winner = showdown.contestants.find(person => person.id === showdown.champion);
+    return `<section class="player-card-panel showdown-player"><span class="section-kicker">DESEMPATE FINALIZADO</span><h2>${winner?.id === myId ? "Você venceu! 🏆" : `${escapeHtml(winner?.name || "Vencedor")} venceu!`}</h2></section>`;
+  }
+  if (showdown.phase === "claims") return `<section class="player-card-panel showdown-player"><span class="section-kicker">BINGO CONFIRMADO</span><h2>Aguardando os outros participantes...</h2><p>O organizador vai iniciar o desempate quando todos os BINGOs forem conferidos.</p></section>`;
+  const current = showdown.currentPair || [];
+  if (!current.includes(myId)) return `<section class="player-card-panel showdown-player"><span class="section-kicker">DESEMPATE</span><h2>Aguardando sua vez</h2><p>Outro confronto está acontecendo nesta rodada.</p></section>`;
+  if (me.choice != null) return `<section class="player-card-panel showdown-player"><span class="section-kicker">SEU NÚMERO</span><h2>${me.choice}</h2><p>Número registrado! Aguarde o adversário e o próximo sorteio.</p></section>`;
+  const other = showdown.contestants.find(person => current.includes(person.id) && person.id !== myId);
+  const unavailable = new Set([...(knownRoom.called || []), ...(showdown.usedNumbers || [])]);
+  if (other?.choice != null) for (let n = 1; n <= 75; n++) if (Math.abs(n - other.choice) < 2) unavailable.add(n);
+  return `<section class="player-card-panel showdown-player"><span class="section-kicker">DESEMPATE · RODADA ${showdown.round}</span><h2>Escolha seu número</h2><p>Escolha um número de 1 a 75. Ele não pode ter sido sorteado, já escolhido, nem ficar a menos de 2 do número do adversário.</p><div class="showdown-number-grid">${Array.from({length:75},(_,i)=>i+1).map(number=>`<button class="showdown-number" data-showdown-number="${number}" ${unavailable.has(number)?"disabled":""}>${number}</button>`).join("")}</div><p class="showdown-help">${other?.choice != null ? `O adversário escolheu ${other.choice}.` : "Aguardando a escolha do adversário também."}</p></section>`;
+}
+
 function renderPlayerScreen() {
   const knownRoom = remoteRoom;
   if (!knownRoom || !playerCard) return;
@@ -404,19 +532,31 @@ function renderPlayerScreen() {
     <main class="player-page container">
       <div class="player-topline"><a href="./" class="brand"><span class="brand-mark"><i class="bi bi-circle-fill"></i><i class="bi bi-stars"></i></span><span>bolla<span class="brand-dot">.</span></span></a><span class="status-chip ${knownRoom.status}"><i></i>${({waiting:"Aguardando",playing:"Em andamento",paused:"Pausado",finished:"Finalizado"})[knownRoom.status]}</span></div>
       <section class="player-heading"><span class="section-kicker">SALA ${knownRoom.code}</span><h1>Boa sorte,<br/><span class="text-gradient">jogador!</span></h1><p>${escapeHtml(knownRoom.title)} · Prêmio: ${escapeHtml(knownRoom.prize)}</p></section>
-      <section class="player-card-panel"><div class="player-card-head"><div><span class="section-kicker">SUA CARTELA</span><h2>Marque seus números</h2></div><button class="btn btn-soft rounded-pill" id="new-card"><i class="bi bi-arrow-repeat me-1"></i>Nova cartela</button></div><div class="bingo-card"><div class="bingo-letters">${LETTERS.map(letter=>`<b>${letter}</b>`).join("")}</div><div class="bingo-grid">${playerCard.card.flat().map(value=>`<button class="bingo-cell ${value==="★"?"free-cell":""} ${markedNumbers.has(value)?"marked":""}" data-value="${value}" ${value==="★"?"disabled":""}>${value}</button>`).join("")}</div></div><div class="player-card-foot"><span><i class="bi bi-hand-index-thumb"></i> Toque para marcar</span><span id="marked-count">${markedNumbers.size} marcados</span></div><button class="btn btn-primary btn-lg rounded-pill w-100 mt-4" id="claim-bingo"><i class="bi bi-trophy me-2"></i>BINGO!</button></section>
+      <section class="player-card-panel"><div class="player-card-head"><div><span class="section-kicker">SUA CARTELA</span><h2>Marque seus números</h2></div><button class="btn btn-soft rounded-pill" id="new-card"><i class="bi bi-arrow-repeat me-1"></i>Nova cartela</button></div><div class="bingo-card"><div class="bingo-letters">${LETTERS.map(letter=>`<b>${letter}</b>`).join("")}</div><div class="bingo-grid">${playerCard.card.flat().map(value=>`<button class="bingo-cell ${value==="★"?"free-cell":""} ${markedNumbers.has(value)?"marked":""} ${knownRoom.called.includes(value)?"called-number":""}" data-value="${value}" ${value==="★"?"disabled":""}>${value}</button>`).join("")}</div></div><div class="player-card-foot"><span><i class="bi bi-hand-index-thumb"></i> Toque para marcar</span><span id="marked-count">${markedNumbers.size} marcados</span></div><button class="btn btn-primary btn-lg rounded-pill w-100 mt-4" id="claim-bingo"><i class="bi bi-trophy me-2"></i>BINGO!</button></section>
+      ${renderShowdownPlayer(knownRoom)}
       <section class="player-recent"><span class="section-kicker">ÚLTIMOS NÚMEROS</span><div class="history-list">${knownRoom.called.slice(-5).reverse().map((n,i)=>`<div class="history-ball ${i===0?"latest":""}"><small>${getLetter(n)}</small><b>${n}</b></div>`).join("") || '<span class="history-empty">Aguardando o primeiro sorteio.</span>'}</div></section>
       <div class="demo-warning"><i class="bi bi-wifi"></i><span>Conectado diretamente ao organizador. Sorteios sincronizados em tempo real.</span></div>
     </main>`, "player");
   document.querySelectorAll(".bingo-cell:not(.free-cell)").forEach(cell => {
     cell.addEventListener("click", () => {
       const value = Number(cell.dataset.value);
+      if (!knownRoom.called.includes(value)) {
+        if (navigator.vibrate) navigator.vibrate([70, 35, 70]);
+        cell.classList.remove("invalid-pulse");
+        void cell.offsetWidth;
+        cell.classList.add("invalid-pulse");
+        cell.addEventListener("animationend", () => cell.classList.remove("invalid-pulse"), { once: true });
+        return;
+      }
       if (markedNumbers.has(value)) markedNumbers.delete(value); else markedNumbers.add(value);
       cell.classList.toggle("marked", markedNumbers.has(value));
       document.querySelector("#marked-count").textContent = `${markedNumbers.size} marcados`;
-      if (navigator.vibrate) navigator.vibrate(35);
     });
   });
+  document.querySelectorAll("[data-showdown-number]").forEach(button => button.addEventListener("click", () => {
+    const number = Number(button.dataset.showdownNumber);
+    if (playerConnection?.open) playerConnection.send({ type: "showdown-choice", number });
+  }));
   document.querySelector("#new-card").addEventListener("click", () => {
     playerCard.card = createCard(); markedNumbers.clear(); savePlayerCard(); renderPlayerScreen();
   });
