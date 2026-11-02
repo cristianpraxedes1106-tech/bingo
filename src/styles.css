@@ -18,3 +18,23 @@
 @keyframes pendingPulse{0%,100%{filter:brightness(.96);box-shadow:0 0 0 1px rgba(255,214,107,.2),0 0 5px rgba(255,214,107,.15)}50%{filter:brightness(1.13);box-shadow:0 0 0 3px rgba(255,214,107,.35),0 0 15px rgba(255,214,107,.45)}}
 @keyframes confirmedPulse{0%,100%{box-shadow:0 0 0 1px rgba(185,243,107,.16),0 0 5px rgba(185,243,107,.18)}50%{box-shadow:0 0 0 3px rgba(185,243,107,.35),0 0 16px rgba(185,243,107,.5)}}
 .landing-choice-note{margin-top:15px;color:#9e98b3;font-size:11px;line-height:1.5}
+
+
+/* Feedback de clique inválido: mantém o pulso vermelho completo também com foco no desktop */
+.bingo-cell.invalid-pulse,
+.bingo-cell.invalid-pulse:focus,
+.bingo-cell.invalid-pulse:active {
+  background-color: #ff526f !important;
+  color: #fff !important;
+  outline: none !important;
+  animation: invalidPulse .55s ease-in-out 2 both !important;
+}
+@keyframes invalidPulse {
+  0%, 100% { transform: scale(1); background-color: #ff526f; color: #fff; }
+  35% { transform: scale(1.1); background-color: #ff7890; color: #fff; }
+  70% { transform: scale(.98); background-color: #ff3f61; color: #fff; }
+}
+.showdown-final-result { text-align: center; padding: 28px 20px; }
+.showdown-trophy { font-size: 48px; margin: 12px 0 4px; }
+.showdown-final-result h2 { font: 700 25px "Space Grotesk"; color: #c7f36b; margin: 8px 0; }
+.showdown-final-result p { margin: 0; }
