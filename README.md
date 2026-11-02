@@ -1,17 +1,25 @@
-# Bolla — plataforma de bingo
+# Bolla — bingo social
 
-> Nome de trabalho; a identidade da marca ainda pode ser alterada.
-
-Plataforma web para organizar partidas recreativas de bingo em eventos presenciais, com painel de host, entrada por QR Code, cartelas digitais e sorteio sincronizado.
+Plataforma web para organizar partidas recreativas de bingo em eventos presenciais, com painel do organizador, entrada por QR Code, cartelas digitais e sorteios sincronizados entre dispositivos.
 
 ## Stack
 
 - HTML, CSS e JavaScript (ES modules)
 - Vite
-- Bootstrap 6.0.0-alpha.1
-- Bootstrap Icons
-- Supabase (Postgres, Auth, Realtime e Edge Functions — integração preparada para a próxima etapa)
-- QRCode.js, html5-qrcode, GSAP e SweetAlert2
+- Bootstrap 6.0.0-alpha.1 e Bootstrap Icons
+- PeerJS + WebRTC para conexão direta entre organizador e jogadores
+- QRCode, GSAP e SweetAlert2
+
+## Como funciona o multiplayer
+
+1. O organizador cria e configura a sala.
+2. Ao iniciar, o Bolla cria um identificador PeerJS e gera o QR Code com esse identificador.
+3. Cada celular abre o link do QR Code e estabelece uma conexão WebRTC com o organizador.
+4. O organizador transmite os números sorteados e o estado da partida para os celulares conectados.
+
+Não é necessário criar conta, fazer login ou configurar um banco de dados. O PeerJS usa um serviço público de sinalização para localizar os dispositivos; depois, os dados da partida trafegam pela conexão WebRTC entre eles.
+
+**Importante:** mantenha a aba do organizador aberta e conectada à internet durante toda a partida. Se o organizador fechar a página ou perder a conexão, os jogadores serão desconectados. A sala não fica armazenada em nuvem e não há recuperação automática após encerrar a sessão. A disponibilidade do serviço público de sinalização e as configurações de rede dos dispositivos também podem afetar a conexão.
 
 ## Requisitos
 
@@ -33,26 +41,12 @@ O deploy é feito automaticamente pelo GitHub Actions a cada atualização na br
 2. Em **Build and deployment → Source**, selecione **GitHub Actions**.
 3. Acompanhe a publicação na aba **Actions**.
 
-Quando a primeira publicação terminar, o site ficará disponível em:
-https://cristianpraxedes1106-tech.github.io/bingo/
-
-## Estado atual
-
-A primeira entrega é um protótipo funcional de interface e motor local: criação de sala, geração de cartela, sorteio sem repetição, histórico e validação local de padrões. O QR Code abre a rota de jogador, mas partidas entre dispositivos ainda dependem da configuração do Supabase e das políticas do banco. Não use este protótipo local como sistema oficial de resultados.
-
-## Configuração futura do Supabase
-
-1. Crie um projeto Supabase.
-2. Copie `.env.example` para `.env`.
-3. Preencha `VITE_SUPABASE_URL` e `VITE_SUPABASE_ANON_KEY`.
-4. Aplique as migrations em `supabase/migrations/`.
-
-Nunca coloque `service_role` ou qualquer segredo administrativo em variáveis `VITE_` ou no frontend.
+Site: https://cristianpraxedes1106-tech.github.io/bingo/
 
 ## Regras de produto
 
-O projeto é voltado a eventos recreativos gratuitos. Não inclui apostas, cobrança por cartela ou prêmios em dinheiro. Para partidas reais, sorteio e validação devem ser executados no servidor.
+O projeto é voltado a eventos recreativos gratuitos. Não inclui apostas, cobrança por cartela ou prêmios em dinheiro.
 
 ## Bootstrap
 
-O projeto usa Bootstrap 6.0.0-alpha.1 por ser a linha 6 disponível nesta fase. É uma versão alpha e pode sofrer alterações incompatíveis antes da versão estável.
+O projeto usa Bootstrap 6.0.0-alpha.1, uma versão alpha que pode sofrer alterações incompatíveis antes da versão estável.
