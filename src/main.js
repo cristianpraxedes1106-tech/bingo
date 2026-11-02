@@ -97,12 +97,15 @@ async function startHostNetwork() {
     playerConnections.add(connection);
     connection.on("open", () => connection.send({ type: "state", room: publicRoomState() }));
     connection.on("data", message => {
+      if (message?.type === "join" && typeof message.name === "string") {
+        connection.playerName = message.name.trim().slice(0, 24) || "Jogador";
+      }
       if (message?.type === "claim" && Array.isArray(message.card)) {
         const valid = hasBingo(message.card, room.called, room.mode);
         const playerId = connection.peer;
         if (valid && !room.showdown?.contestants?.some(person => person.id === playerId)) {
           room.showdown ||= { phase: "claims", contestants: [], active: [], winners: [], pairs: [], pairIndex: 0, usedNumbers: [], log: [], champion: null, round: 1, currentPair: null, tie: false };
-          if (room.showdown.phase === "claims") room.showdown.contestants.push({ id: playerId, name: `Participante ${room.showdown.contestants.length + 1}`, choice: null });
+          if (room.showdown.phase === "claims") room.showdown.contestants.push({ id: playerId, name: connection.playerName || `Participante ${room.showdown.contestants.length + 1}`, choice: null });
           saveRoom();
           broadcastRoomState();
           renderHost();
@@ -507,13 +510,27 @@ function renderPlayer() {
   playerPeer = new Peer();
   playerPeer.on("open", () => {
     playerConnection = playerPeer.connect(hostId, { reliable: true });
-    playerConnection.on("data", message => {
+    playerConnection.on("data", async message => {
       if (message?.type === "state") {
         remoteRoom = message.room;
         if (!playerCard || playerCard.roomCode !== code) {
-          playerCard = { roomCode: code, name: "Jogador", card: createCard() };
+          playerCard = { roomCode: code, name: "", card: createCard() };
           savePlayerCard();
         }
+        if (!playerCard.name) {
+          const result = await Swal.fire({
+            title: "Como podemos te chamar?",
+            text: "Seu nome aparecerá no resultado do BINGO.",
+            input: "text",
+            inputPlaceholder: "Seu nome",
+            inputAttributes: { maxlength: 24 },
+            confirmButtonText: "Entrar",
+            allowOutsideClick: false
+          });
+          playerCard.name = result.value?.trim() || "Jogador";
+          savePlayerCard();
+        }
+        if (playerConnection?.open) playerConnection.send({ type: "join", name: playerCard.name });
         renderPlayerScreen();
       } else if (message?.type === "claim-result") {
         Swal.fire(message.valid ? { title:"BINGO!", text:"Seu padrão foi confirmado pelo organizador!", icon:"success" } : { title:"Ainda não foi!", text:"Sua cartela ainda não completou o padrão vencedor.", icon:"info" });
@@ -534,11 +551,12 @@ function renderShowdownPlayer(knownRoom) {
   if (!showdown) return "";
   const myId = playerPeer?.id;
   const me = showdown.contestants?.find(person => person.id === myId);
-  if (!me) return "";
   if (showdown.phase === "finished") {
     const winner = showdown.contestants.find(person => person.id === showdown.champion);
-    return `<section class="player-card-panel showdown-player"><span class="section-kicker">DESEMPATE FINALIZADO</span><h2>${winner?.id === myId ? "Você venceu! 🏆" : `${escapeHtml(winner?.name || "Vencedor")} venceu!`}</h2></section>`;
+    const isWinner = winner?.id === myId;
+    return `<section class="player-card-panel showdown-player showdown-final-result"><span class="section-kicker">RESULTADO FINAL</span><div class="showdown-trophy">🏆</div><h2>${isWinner ? "VOCÊ VENCEU!" : `${escapeHtml(winner?.name || "Vencedor")} venceu!`}</h2><p>${isWinner ? "Parabéns! Você foi o grande vencedor desta partida." : `A partida foi vencida por ${escapeHtml(winner?.name || "um participante")}. Parabéns!`}</p></section>`;
   }
+  if (!me) return "";
   if (showdown.phase === "claims") return `<section class="player-card-panel showdown-player"><span class="section-kicker">BINGO CONFIRMADO</span><h2>Aguardando os outros participantes...</h2><p>O organizador vai iniciar o desempate quando todos os BINGOs forem conferidos.</p></section>`;
   const current = showdown.currentPair || [];
   if (!current.includes(myId)) return `<section class="player-card-panel showdown-player"><span class="section-kicker">DESEMPATE</span><h2>Aguardando sua vez</h2><p>Outro confronto está acontecendo nesta rodada.</p></section>`;
