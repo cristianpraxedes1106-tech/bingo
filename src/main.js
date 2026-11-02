@@ -400,7 +400,7 @@ function showPlayerConnectionError() {
 function renderPlayerScreen() {
   const knownRoom = remoteRoom;
   if (!knownRoom || !playerCard) return;
-  renderShell(\`
+  renderShell(`
     <main class="player-page container">
       <div class="player-topline"><a href="./" class="brand"><span class="brand-mark"><i class="bi bi-circle-fill"></i><i class="bi bi-stars"></i></span><span>bolla<span class="brand-dot">.</span></span></a><span class="status-chip \${knownRoom.status}"><i></i>\${({waiting:"Aguardando",playing:"Em andamento",paused:"Pausado",finished:"Finalizado"})[knownRoom.status]}</span></div>
       <section class="player-heading"><span class="section-kicker">SALA \${knownRoom.code}</span><h1>Boa sorte,<br/><span class="text-gradient">jogador!</span></h1><p>\${escapeHtml(knownRoom.title)} · Prêmio: \${escapeHtml(knownRoom.prize)}</p></section>
