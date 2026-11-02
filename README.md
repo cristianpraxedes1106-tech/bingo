@@ -25,6 +25,17 @@ npm install
 npm run dev
 ```
 
+## Publicação no GitHub Pages
+
+O deploy é feito automaticamente pelo GitHub Actions a cada atualização na branch `main`.
+
+1. No repositório, abra **Settings → Pages**.
+2. Em **Build and deployment → Source**, selecione **GitHub Actions**.
+3. Acompanhe a publicação na aba **Actions**.
+
+Quando a primeira publicação terminar, o site ficará disponível em:
+https://cristianpraxedes1106-tech.github.io/bingo/
+
 ## Estado atual
 
 A primeira entrega é um protótipo funcional de interface e motor local: criação de sala, geração de cartela, sorteio sem repetição, histórico e validação local de padrões. O QR Code abre a rota de jogador, mas partidas entre dispositivos ainda dependem da configuração do Supabase e das políticas do banco. Não use este protótipo local como sistema oficial de resultados.
