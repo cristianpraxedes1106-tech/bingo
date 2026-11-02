@@ -54,6 +54,7 @@ function createRoom() {
     prize: "Um prêmio surpresa",
     mode: "line",
     status: "waiting",
+    started: false,
     pool: createDrawPool(),
     called: [],
     createdAt: new Date().toISOString()
@@ -140,10 +141,40 @@ async function askRoomCode() {
 
 function renderHost() {
   if (!room) return renderLanding();
-  renderShell(`
+  const setup = !room.started;
+  const content = setup ? `
     <main class="dashboard container">
       <div class="page-heading">
-        <div><div class="eyebrow"><span class="eyebrow-spark">✳</span> CENTRAL DO ORGANIZADOR</div><h1>Sua sala está<br/><span class="text-gradient">quase pronta.</span></h1><p>Configure a rodada, convide os participantes e prepare o sorteio.</p></div>
+        <div><div class="eyebrow"><span class="eyebrow-spark">✳</span> CENTRAL DO ORGANIZADOR</div><h1>Prepare sua<br/><span class="text-gradient">partida.</span></h1><p>Configure tudo com calma. A sala só começa quando você der o sinal.</p></div>
+        <button class="btn btn-outline-light rounded-pill" id="new-room"><i class="bi bi-plus-lg me-2"></i>Nova sala</button>
+      </div>
+      <div class="room-layout setup-layout">
+        <section class="main-panel setup-preview">
+          <div class="panel-heading"><div><span class="section-kicker">PRÉVIA DA SALA</span><h2 id="preview-title">${escapeHtml(room.title)}</h2></div><span class="status-chip waiting"><i></i>Em preparação</span></div>
+          <div class="setup-welcome"><div class="setup-icon"><i class="bi bi-tv"></i></div><div><h3>Sua tela de sorteio vai aparecer aqui.</h3><p>Ideal para deixar esta página aberta na TV ou projetor. Antes de iniciar, ajuste as opções ao lado.</p></div></div>
+          <div class="setup-steps">
+            <div class="setup-step"><span>1</span><div><b>Personalize a rodada</b><p>Dê um nome ao evento, defina o prêmio recreativo e escolha como alguém vence.</p></div><i class="bi bi-sliders"></i></div>
+            <div class="setup-step"><span>2</span><div><b>Confira antes de começar</b><p>Veja se o nome e a modalidade estão certos. Depois de iniciar, a sala fica pronta para receber participantes.</p></div><i class="bi bi-check2-circle"></i></div>
+            <div class="setup-step"><span>3</span><div><b>Mostre o QR Code e dê o play</b><p>Com a sala iniciada, o código de entrada aparece aqui para você exibir na TV.</p></div><i class="bi bi-qr-code"></i></div>
+          </div>
+          <div class="setup-notice"><i class="bi bi-info-circle"></i><span><b>Importante:</b> a versão atual ainda está em demonstração local. O QR será gerado, mas para celulares diferentes entrarem na mesma sala precisamos conectar o Supabase.</span></div>
+        </section>
+        <aside class="side-column">
+          <section class="side-card settings-card setup-settings">
+            <div class="side-card-head"><span class="section-kicker">1. CONFIGURE SUA SALA</span><i class="bi bi-toggles"></i></div>
+            <label class="form-label mt-3" for="event-title">Nome do evento</label><input class="form-control custom-input" id="event-title" value="${escapeHtml(room.title)}" maxlength="50" placeholder="Ex.: Bingo da festa junina"/>
+            <label class="form-label mt-3" for="event-prize">Prêmio recreativo</label><input class="form-control custom-input" id="event-prize" value="${escapeHtml(room.prize)}" maxlength="80" placeholder="Ex.: Kit de chocolates"/>
+            <label class="form-label mt-3" for="game-mode">Como ganha?</label><select class="form-select custom-input" id="game-mode"><option value="line" ${room.mode==="line"?"selected":""}>Uma linha</option><option value="column" ${room.mode==="column"?"selected":""}>Uma coluna</option><option value="diagonal" ${room.mode==="diagonal"?"selected":""}>Diagonal</option><option value="corners" ${room.mode==="corners"?"selected":""}>Quatro cantos</option><option value="full" ${room.mode==="full"?"selected":""}>Cartela cheia</option></select>
+            <div class="setup-summary"><small>RESUMO</small><b id="summary-title">${escapeHtml(room.title)}</b><span id="summary-mode">Vitória: Uma linha</span></div>
+            <button class="btn btn-primary btn-lg rounded-pill w-100 mt-3" id="start-room"><i class="bi bi-play-fill me-2"></i>Salvar e iniciar sala</button>
+            <p class="setup-hint"><i class="bi bi-lightbulb"></i> O QR Code só aparece depois que você iniciar.</p>
+          </section>
+        </aside>
+      </div>
+    </main>` : `
+    <main class="dashboard container">
+      <div class="page-heading">
+        <div><div class="eyebrow"><span class="eyebrow-spark">✳</span> CENTRAL DO ORGANIZADOR</div><h1>Sua sala está<br/><span class="text-gradient">no ar.</span></h1><p>Mostre o QR Code na TV e conduza a rodada por aqui.</p></div>
         <button class="btn btn-outline-light rounded-pill" id="new-room"><i class="bi bi-plus-lg me-2"></i>Nova sala</button>
       </div>
       <div class="room-layout">
@@ -152,9 +183,9 @@ function renderHost() {
           <div class="draw-stage">
             <div class="draw-meta"><span>ÚLTIMO NÚMERO</span><span>${room.called.length} / 75 SORTEADOS</span></div>
             <div class="draw-ball-wrap"><div class="draw-ball" id="draw-ball"><span id="draw-letter">${room.called.length ? getLetter(room.called.at(-1)) : "?"}</span><strong id="draw-number">${room.called.length ? room.called.at(-1) : "—"}</strong></div><div class="draw-glow"></div></div>
-            <p class="draw-caption" id="draw-caption">${room.called.length ? "Número sorteado. Boa sorte!" : "O primeiro número está esperando por você."}</p>
+            <p class="draw-caption" id="draw-caption">${room.called.length ? "Número sorteado. Boa sorte!" : "Tudo pronto. Faça o primeiro sorteio quando quiser."}</p>
             <div class="draw-actions">
-              <button class="btn btn-primary btn-lg rounded-pill px-4" id="draw-now" ${room.status === "finished" ? "disabled" : ""}><i class="bi bi-shuffle me-2"></i>Sortear número</button>
+              <button class="btn btn-primary btn-lg rounded-pill px-4" id="draw-now" ${room.status === "finished" || room.status === "paused" ? "disabled" : ""}><i class="bi bi-shuffle me-2"></i>Sortear número</button>
               <button class="btn btn-soft btn-lg rounded-pill" id="toggle-pause" ${room.called.length === 0 ? "disabled" : ""}><i class="bi bi-${room.status === "paused" ? "play-fill" : "pause-fill"} me-2"></i>${room.status === "paused" ? "Continuar" : "Pausar"}</button>
             </div>
           </div>
@@ -162,15 +193,16 @@ function renderHost() {
           <div class="called-board"><div class="subheading"><span>PAINEL DE NÚMEROS</span><small>75 bolas</small></div><div class="number-board">${renderNumberBoard()}</div></div>
         </section>
         <aside class="side-column">
-          <section class="side-card invite-card"><div class="side-card-head"><span class="section-kicker">CONVIDE A GALERA</span><i class="bi bi-qr-code"></i></div><h3>É só apontar<br/>a câmera.</h3><p>Participantes entram pelo celular usando o QR Code ou o código da sala.</p><div class="qr-frame"><canvas id="room-qr"></canvas></div><div class="room-code-label">CÓDIGO DA SALA</div><div class="room-code"><strong>${room.code}</strong><button id="copy-code" aria-label="Copiar código"><i class="bi bi-copy"></i></button></div><button class="btn btn-light w-100 rounded-pill mt-3" id="copy-link"><i class="bi bi-link-45deg me-2"></i>Copiar link de entrada</button></section>
-          <section class="side-card settings-card"><div class="side-card-head"><span class="section-kicker">CONFIGURAÇÕES</span><i class="bi bi-sliders"></i></div><label class="form-label" for="event-title">Nome do evento</label><input class="form-control custom-input" id="event-title" value="${escapeHtml(room.title)}" maxlength="50"/><label class="form-label mt-3" for="event-prize">Prêmio da rodada</label><input class="form-control custom-input" id="event-prize" value="${escapeHtml(room.prize)}" maxlength="80"/><label class="form-label mt-3" for="game-mode">Como ganha?</label><select class="form-select custom-input" id="game-mode"><option value="line" ${room.mode==="line"?"selected":""}>Uma linha</option><option value="column" ${room.mode==="column"?"selected":""}>Uma coluna</option><option value="diagonal" ${room.mode==="diagonal"?"selected":""}>Diagonal</option><option value="corners" ${room.mode==="corners"?"selected":""}>Quatro cantos</option><option value="full" ${room.mode==="full"?"selected":""}>Cartela cheia</option></select><button class="btn btn-primary w-100 rounded-pill mt-3" id="save-settings">Salvar configurações</button></section>
-          <section class="prize-mini"><span>🏆</span><div><small>PRÊMIO DA RODADA</small><strong>${escapeHtml(room.prize)}</strong></div></section>
+          <section class="side-card invite-card"><div class="side-card-head"><span class="section-kicker">SALA INICIADA · CONVITES</span><i class="bi bi-qr-code"></i></div><h3>É só apontar<br/>a câmera.</h3><p>Exiba este código para a galera. A entrada por celulares diferentes será liberada quando o multiplayer estiver conectado.</p><div class="qr-frame"><canvas id="room-qr"></canvas></div><div class="room-code-label">CÓDIGO DA SALA</div><div class="room-code"><strong>${room.code}</strong><button id="copy-code" aria-label="Copiar código"><i class="bi bi-copy"></i></button></div><button class="btn btn-light w-100 rounded-pill mt-3" id="copy-link"><i class="bi bi-link-45deg me-2"></i>Copiar link de entrada</button></section>
+          <section class="side-card settings-card"><div class="side-card-head"><span class="section-kicker">CONFIGURAÇÕES</span><i class="bi bi-sliders"></i></div><label class="form-label" for="event-title">Nome do evento</label><input class="form-control custom-input" id="event-title" value="${escapeHtml(room.title)}" maxlength="50"/><label class="form-label mt-3" for="event-prize">Prêmio recreativo</label><input class="form-control custom-input" id="event-prize" value="${escapeHtml(room.prize)}" maxlength="80"/><label class="form-label mt-3" for="game-mode">Como ganha?</label><select class="form-select custom-input" id="game-mode"><option value="line" ${room.mode==="line"?"selected":""}>Uma linha</option><option value="column" ${room.mode==="column"?"selected":""}>Uma coluna</option><option value="diagonal" ${room.mode==="diagonal"?"selected":""}>Diagonal</option><option value="corners" ${room.mode==="corners"?"selected":""}>Quatro cantos</option><option value="full" ${room.mode==="full"?"selected":""}>Cartela cheia</option></select><button class="btn btn-primary w-100 rounded-pill mt-3" id="save-settings">Salvar configurações</button></section>
         </aside>
       </div>
-      <div class="demo-warning"><i class="bi bi-info-circle"></i><span><b>Protótipo em modo demonstração.</b> Os dados ficam neste navegador. A sincronização entre celulares será ativada na integração com o Supabase.</span></div>
-    </main>`);
+      <div class="demo-warning"><i class="bi bi-info-circle"></i><span><b>Multiplayer ainda não conectado.</b> Os dados desta demonstração ficam neste navegador. Para o QR funcionar entre TV e celulares, falta configurar o Supabase.</span></div>
+    </main>`;
+  renderShell(content);
   bindHostEvents();
-  drawQr();
+  if (room.started) drawQr();
+  else bindSetupPreview();
 }
 
 function statusLabel() {
@@ -188,9 +220,29 @@ function renderNumberBoard() {
 
 function bindHostEvents() {
   document.querySelector("#new-room").addEventListener("click", async () => {
-    const result = await Swal.fire({ title:"Criar outra sala?", text:"A sala atual será substituída neste navegador.", icon:"question", showCancelButton:true, confirmButtonText:"Criar nova", cancelButtonText:"Cancelar" });
+    const result = await Swal.fire({ title:"Criar outra sala?", text:"A configuração atual será substituída.", icon:"question", showCancelButton:true, confirmButtonText:"Criar nova", cancelButtonText:"Cancelar" });
     if (result.isConfirmed) createRoom();
   });
+  const startButton = document.querySelector("#start-room");
+  if (startButton) {
+    startButton.addEventListener("click", async () => {
+      room.title = document.querySelector("#event-title").value.trim() || "Meu bingo";
+      room.prize = document.querySelector("#event-prize").value.trim() || "Prêmio surpresa";
+      room.mode = document.querySelector("#game-mode").value;
+      const result = await Swal.fire({
+        title:"Tudo pronto para começar?",
+        html:`<div style="text-align:left"><p><b>${escapeHtml(room.title)}</b></p><p>Prêmio: ${escapeHtml(room.prize)}</p><p>Vitória: ${escapeHtml(modeLabel(room.mode))}</p><hr/><p>Ao iniciar, o QR Code e o código da sala serão exibidos.</p></div>`,
+        icon:"question", showCancelButton:true, confirmButtonText:"Iniciar sala", cancelButtonText:"Voltar e revisar"
+      });
+      if (!result.isConfirmed) return;
+      room.started = true;
+      room.status = "waiting";
+      saveRoom();
+      renderHost();
+      Swal.fire({ toast:true, position:"top-end", icon:"success", title:"Sala preparada!", showConfirmButton:false, timer:1800 });
+    });
+    return;
+  }
   document.querySelector("#draw-now").addEventListener("click", drawNext);
   document.querySelector("#toggle-pause").addEventListener("click", () => {
     room.status = room.status === "paused" ? "playing" : "paused";
@@ -207,8 +259,29 @@ function bindHostEvents() {
   document.querySelector("#copy-link").addEventListener("click", () => copyText(roomUrl(), "Link copiado!"));
 }
 
+function modeLabel(mode) {
+  return ({line:"Uma linha",column:"Uma coluna",diagonal:"Diagonal",corners:"Quatro cantos",full:"Cartela cheia"})[mode] || "Uma linha";
+}
+
+function bindSetupPreview() {
+  const title = document.querySelector("#event-title");
+  const mode = document.querySelector("#game-mode");
+  const summaryTitle = document.querySelector("#summary-title");
+  const summaryMode = document.querySelector("#summary-mode");
+  const previewTitle = document.querySelector("#preview-title");
+  const update = () => {
+    const value = title.value.trim() || "Meu bingo";
+    summaryTitle.textContent = value;
+    previewTitle.textContent = value;
+    summaryMode.textContent = "Vitória: " + modeLabel(mode.value);
+  };
+  title.addEventListener("input", update);
+  mode.addEventListener("change", update);
+}
+
 function drawNext() {
   if (room.status === "paused") return Swal.fire("Partida pausada", "Continue a partida antes de sortear.", "info");
+  if (!room.started) return Swal.fire("Sala ainda não iniciada", "Configure a sala e aperte “Salvar e iniciar sala” antes de sortear.", "info");
   if (!room.called.length) room.status = "playing";
   const number = drawNumber(room.pool);
   if (number === null) {
