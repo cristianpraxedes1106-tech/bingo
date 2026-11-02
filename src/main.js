@@ -225,6 +225,16 @@ function prepareShowdownRound() {
   saveRoom(); broadcastRoomState(); renderHost();
 }
 
+function finishSingleBingo() {
+  const showdown = room.showdown;
+  if (!showdown || showdown.phase !== "claims" || showdown.contestants.length !== 1) return;
+  showdown.champion = showdown.contestants[0].id;
+  showdown.phase = "finished";
+  room.status = "finished";
+  saveRoom(); broadcastRoomState(); renderHost();
+  Swal.fire({ title: "BINGO confirmado!", text: `${showdown.contestants[0].name} venceu a partida!`, icon: "success" });
+}
+
 function startShowdown() {
   const showdown = room.showdown;
   if (!showdown || showdown.phase !== "claims" || showdown.contestants.length < 2) return;
@@ -279,7 +289,7 @@ function renderShowdownHost() {
   const pair = showdown.currentPair?.map(id => showdown.contestants.find(person => person.id === id)).filter(Boolean) || [];
   const duel = pair.length === 2 ? `<p class="showdown-match">${escapeHtml(pair[0].name)} <strong>VS</strong> ${escapeHtml(pair[1].name)}</p><p class="showdown-help">Cada pessoa escolhe um número diferente, sem ficar a menos de 2 unidades do número escolhido pelo adversário. Depois, o próximo sorteio decide quem ficou mais perto.</p>` : "";
   const history = showdown.log.map(item => `<div class="showdown-result"><span>Rodada ${item.round}: ${escapeHtml(item.a)} × ${escapeHtml(item.b)}</span><b>${item.draw} → ${escapeHtml(item.result)}</b></div>`).join("");
-  return `<section class="side-card showdown-card"><div class="side-card-head"><span class="section-kicker">DESEMPATE · ELIMINATÓRIA</span><i class="bi bi-trophy"></i></div><p class="showdown-status">${showdown.phase === "claims" ? `${showdown.contestants.length} BINGO(s) confirmado(s)` : showdown.phase === "finished" ? "Desempate finalizado" : `Rodada ${showdown.round} · confronto ${showdown.pairIndex + 1} de ${showdown.pairs.length}`}</p>${contestants}${duel}${showdown.phase === "claims" && showdown.contestants.length >= 2 ? '<button class="btn btn-primary w-100 mt-3" id="start-showdown">Iniciar desempate</button>' : ""}${showdown.phase === "duel" && pair.length === 2 && pair.every(person => person.choice != null) ? '<button class="btn btn-primary w-100 mt-3" id="resolve-showdown">Sortear confronto</button>' : ""}${showdown.champion ? `<p class="showdown-champion">🏆 ${escapeHtml(showdown.contestants.find(person => person.id === showdown.champion)?.name || "Vencedor")}</p>` : ""}${history}</section>`;
+  return `<section class="side-card showdown-card"><div class="side-card-head"><span class="section-kicker">DESEMPATE · ELIMINATÓRIA</span><i class="bi bi-trophy"></i></div><p class="showdown-status">${showdown.phase === "claims" ? `${showdown.contestants.length} BINGO(s) confirmado(s)` : showdown.phase === "finished" ? "Desempate finalizado" : `Rodada ${showdown.round} · confronto ${showdown.pairIndex + 1} de ${showdown.pairs.length}`}</p>${contestants}${duel}${showdown.phase === "claims" && showdown.contestants.length === 1 ? '<button class="btn btn-primary w-100 mt-3" id="finish-single-bingo">Confirmar vencedor</button>' : ""}${showdown.phase === "claims" && showdown.contestants.length >= 2 ? '<button class="btn btn-primary w-100 mt-3" id="start-showdown">Iniciar desempate</button>' : ""}${showdown.phase === "duel" && pair.length === 2 && pair.every(person => person.choice != null) ? '<button class="btn btn-primary w-100 mt-3" id="resolve-showdown">Sortear confronto</button>' : ""}${showdown.champion ? `<p class="showdown-champion">🏆 ${escapeHtml(showdown.contestants.find(person => person.id === showdown.champion)?.name || "Vencedor")}</p>` : ""}${history}</section>`;
 }
 
 function renderHost() {
@@ -400,6 +410,7 @@ function bindHostEvents() {
   }
   document.querySelector("#draw-now").addEventListener("click", drawNext);
   document.querySelector("#start-showdown")?.addEventListener("click", startShowdown);
+  document.querySelector("#finish-single-bingo")?.addEventListener("click", finishSingleBingo);
   document.querySelector("#resolve-showdown")?.addEventListener("click", resolveShowdownDuel);
   document.querySelector("#toggle-pause").addEventListener("click", () => {
     room.status = room.status === "paused" ? "playing" : "paused";
@@ -524,7 +535,7 @@ function renderShowdownPlayer(knownRoom) {
   const other = showdown.contestants.find(person => current.includes(person.id) && person.id !== myId);
   const unavailable = new Set([...(knownRoom.called || []), ...(showdown.usedNumbers || [])]);
   if (other?.choice != null) for (let n = 1; n <= 75; n++) if (Math.abs(n - other.choice) < 3) unavailable.add(n);
-  return `<section class="player-card-panel showdown-player"><span class="section-kicker">DESEMPATE · RODADA ${showdown.round}</span><h2>Escolha seu número</h2><p>Escolha um número de 1 a 75. Ele não pode ter sido sorteado, já escolhido, nem ficar a menos de 2 do número do adversário.</p><div class="showdown-number-grid">${Array.from({length:75},(_,i)=>i+1).map(number=>`<button class="showdown-number" data-showdown-number="${number}" ${unavailable.has(number)?"disabled":""}>${number}</button>`).join("")}</div><p class="showdown-help">${other?.choice != null ? `O adversário escolheu ${other.choice}.` : "Aguardando a escolha do adversário também."}</p></section>`;
+  return `<section class="player-card-panel showdown-player"><span class="section-kicker">DESEMPATE · RODADA ${showdown.round}</span><h2>Escolha seu número</h2><p>Escolha um número de 1 a 75. Ele não pode ter sido sorteado, já escolhido, nem ficar a menos de 3 unidades do número do adversário.</p><div class="showdown-number-grid">${Array.from({length:75},(_,i)=>i+1).map(number=>`<button class="showdown-number" data-showdown-number="${number}" ${unavailable.has(number)?"disabled":""}>${number}</button>`).join("")}</div><p class="showdown-help">${other?.choice != null ? `O adversário escolheu ${other.choice}.` : "Aguardando a escolha do adversário também."}</p></section>`;
 }
 
 function renderPlayerScreen() {
