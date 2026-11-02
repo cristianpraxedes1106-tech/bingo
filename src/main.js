@@ -119,11 +119,13 @@ async function startHostNetwork() {
         const number = Number(message.number);
         const opponent = showdown?.currentPair?.find(id => id !== connection.peer);
         const opponentChoice = showdown?.contestants?.find(person => person.id === opponent)?.choice;
-        const allowed = showdown?.phase === "duel" && showdown.currentPair?.includes(connection.peer) && Number.isInteger(number) && number >= 1 && number <= 75 && !room.called.includes(number) && !showdown.usedNumbers.includes(number) && (opponentChoice == null || Math.abs(number - opponentChoice) >= 3);
+        const allowed = showdown?.phase === "duel" && showdown.currentPair?.includes(connection.peer) && Number.isInteger(number) && number >= 1 && number <= 75 && (opponentChoice == null || Math.abs(number - opponentChoice) > 2);
         if (player && allowed && player.choice == null) {
           player.choice = number;
-          showdown.usedNumbers.push(number);
           saveRoom(); broadcastRoomState(); renderHost();
+          connection.send({ type: "showdown-choice-result", accepted: true, number });
+        } else {
+          connection.send({ type: "showdown-choice-result", accepted: false, number });
         }
       }
     });
@@ -534,6 +536,8 @@ function renderPlayer() {
         renderPlayerScreen();
       } else if (message?.type === "claim-result") {
         Swal.fire(message.valid ? { title:"BINGO!", text:"Seu padrão foi confirmado pelo organizador!", icon:"success" } : { title:"Ainda não foi!", text:"Sua cartela ainda não completou o padrão vencedor.", icon:"info" });
+      } else if (message?.type === "showdown-choice-result" && !message.accepted) {
+        Swal.fire({ toast:true, position:"top", icon:"info", title:"Esse número acabou de ficar indisponível", showConfirmButton:false, timer:1800 });
       }
     });
     playerConnection.on("error", showPlayerConnectionError);
@@ -562,9 +566,11 @@ function renderShowdownPlayer(knownRoom) {
   if (!current.includes(myId)) return `<section class="player-card-panel showdown-player"><span class="section-kicker">DESEMPATE</span><h2>Aguardando sua vez</h2><p>Outro confronto está acontecendo nesta rodada.</p></section>`;
   if (me.choice != null) return `<section class="player-card-panel showdown-player"><span class="section-kicker">SEU NÚMERO</span><h2>${me.choice}</h2><p>Número registrado! Aguarde o adversário e o próximo sorteio.</p></section>`;
   const other = showdown.contestants.find(person => current.includes(person.id) && person.id !== myId);
-  const unavailable = new Set([...(knownRoom.called || []), ...(showdown.usedNumbers || [])]);
-  if (other?.choice != null) for (let n = 1; n <= 75; n++) if (Math.abs(n - other.choice) < 3) unavailable.add(n);
-  return `<section class="player-card-panel showdown-player"><span class="section-kicker">DESEMPATE · RODADA ${showdown.round}</span><h2>Escolha seu número</h2><p>Escolha um número de 1 a 75. Ele não pode ter sido sorteado, já escolhido, nem ficar a menos de 3 unidades do número do adversário.</p><div class="showdown-number-grid">${Array.from({length:75},(_,i)=>i+1).map(number=>`<button class="showdown-number" data-showdown-number="${number}" ${unavailable.has(number)?"disabled":""}>${number}</button>`).join("")}</div><p class="showdown-help">${other?.choice != null ? `O adversário escolheu ${other.choice}.` : "Aguardando a escolha do adversário também."}</p></section>`;
+  const unavailable = new Set();
+  if (other?.choice != null) {
+    for (let n = Math.max(1, other.choice - 2); n <= Math.min(75, other.choice + 2); n++) unavailable.add(n);
+  }
+  return `<section class="player-card-panel showdown-player"><span class="section-kicker">DESEMPATE · RODADA ${showdown.round}</span><h2>Escolha seu número</h2><p>Todos os números de 1 a 75 estão disponíveis. Quando o adversário escolher, o número dele e os dois anteriores e posteriores serão bloqueados.</p><div class="showdown-number-grid">${Array.from({length:75},(_,i)=>i+1).map(number=>`<button class="showdown-number" data-showdown-number="${number}" ${unavailable.has(number)?"disabled":""}>${number}</button>`).join("")}</div><p class="showdown-help">${other?.choice != null ? `O adversário escolheu ${other.choice}.` : "Aguardando a escolha do adversário também."}</p></section>`;
 }
 
 function renderPlayerScreen() {
