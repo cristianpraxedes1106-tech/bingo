@@ -113,7 +113,7 @@ function renderShell(content, active = "host") {
           <span>bolla<span class="brand-dot">.</span></span>
         </a>
         <div class="topbar-right">
-          <span class="demo-pill"><span></span> MODO DEMONSTRAÇÃO</span>
+          <span class="demo-pill"><span></span> MULTIPLAYER P2P</span>
           <a class="top-link ${active === "host" ? "active" : ""}" href="./"><i class="bi bi-display"></i><span>Organizador</span></a>
         </div>
       </nav>
@@ -194,7 +194,7 @@ function renderHost() {
             <div class="setup-step"><span>2</span><div><b>Confira antes de começar</b><p>Veja se o nome e a modalidade estão certos. Depois de iniciar, a sala fica pronta para receber participantes.</p></div><i class="bi bi-check2-circle"></i></div>
             <div class="setup-step"><span>3</span><div><b>Mostre o QR Code e dê o play</b><p>Com a sala iniciada, o código de entrada aparece aqui para você exibir na TV.</p></div><i class="bi bi-qr-code"></i></div>
           </div>
-          <div class="setup-notice"><i class="bi bi-info-circle"></i><span><b>Importante:</b> a versão atual ainda está em demonstração local. O QR será gerado, mas para celulares diferentes entrarem na mesma sala precisamos conectar o Supabase.</span></div>
+          <div class="setup-notice"><i class="bi bi-info-circle"></i><span><b>Importante:</b> A sala usa conexão direta entre dispositivos. Mantenha esta tela aberta e conectada à internet durante a partida.</span></div>
         </section>
         <aside class="side-column">
           <section class="side-card settings-card setup-settings">
@@ -234,7 +234,7 @@ function renderHost() {
           <section class="side-card settings-card"><div class="side-card-head"><span class="section-kicker">CONFIGURAÇÕES</span><i class="bi bi-sliders"></i></div><label class="form-label" for="event-title">Nome do evento</label><input class="form-control custom-input" id="event-title" value="${escapeHtml(room.title)}" maxlength="50"/><label class="form-label mt-3" for="event-prize">Prêmio recreativo</label><input class="form-control custom-input" id="event-prize" value="${escapeHtml(room.prize)}" maxlength="80"/><label class="form-label mt-3" for="game-mode">Como ganha?</label><select class="form-select custom-input" id="game-mode"><option value="line" ${room.mode==="line"?"selected":""}>Uma linha</option><option value="column" ${room.mode==="column"?"selected":""}>Uma coluna</option><option value="diagonal" ${room.mode==="diagonal"?"selected":""}>Diagonal</option><option value="corners" ${room.mode==="corners"?"selected":""}>Quatro cantos</option><option value="full" ${room.mode==="full"?"selected":""}>Cartela cheia</option></select><button class="btn btn-primary w-100 rounded-pill mt-3" id="save-settings">Salvar configurações</button></section>
         </aside>
       </div>
-      <div class="demo-warning"><i class="bi bi-info-circle"></i><span><b>Multiplayer ainda não conectado.</b> Os dados desta demonstração ficam neste navegador. Para o QR funcionar entre TV e celulares, falta configurar o Supabase.</span></div>
+      <div class="demo-warning"><i class="bi bi-info-circle"></i><span><b>Conexão direta ativa.</b> Mantenha esta tela aberta para os celulares continuarem recebendo os sorteios.</span></div>
     </main>`;
   renderShell(content);
   bindHostEvents();
@@ -333,7 +333,7 @@ function drawNext() {
   if (!room.called.length) room.status = "playing";
   const number = drawNumber(room.pool);
   if (number === null) {
-    room.status = "finished"; saveRoom(); renderHost();
+    room.status = "finished"; saveRoom(); broadcastRoomState(); renderHost();
     return Swal.fire("Fim de jogo!", "Todas as 75 bolas já foram sorteadas.", "success");
   }
   room.called.push(number);
