@@ -11,6 +11,7 @@ import { createCard, createDrawPool, drawNumber, getLetter, hasBingo, LETTERS } 
 const app = document.querySelector("#app");
 const params = new URLSearchParams(window.location.search);
 const isPlayerRoute = params.get("view") === "player";
+const isHostRoute = params.get("view") === "host";
 const STORAGE_KEY = "bolla-demo-room";
 let room = loadRoom();
 let playerCard = loadPlayerCard();
@@ -66,6 +67,9 @@ function createRoom() {
     createdAt: new Date().toISOString()
   };
   saveRoom();
+  const url = new URL(window.location.href);
+  url.search = new URLSearchParams({ view: "host" }).toString();
+  window.history.pushState({}, "", url);
   renderHost();
 }
 
@@ -153,8 +157,9 @@ function renderLanding() {
           <p class="hero-description">Crie sua sala, compartilhe o QR Code e deixe a diversão acontecer. O bingo da sua galera começa aqui.</p>
           <div class="hero-actions">
             <button class="btn btn-primary btn-lg rounded-pill px-4" id="create-room"><i class="bi bi-plus-lg me-2"></i>Criar uma sala</button>
-            <button class="btn btn-outline-light btn-lg rounded-pill px-4" id="join-room"><i class="bi bi-qr-code-scan me-2"></i>Entrar em uma sala</button>
+            <button class="btn btn-outline-light btn-lg rounded-pill px-4" id="join-room"><i class="bi bi-box-arrow-in-right me-2"></i>Entrar em uma sala</button>
           </div>
+          <p class="landing-choice-note">Funciona no computador, tablet ou celular. Escolha seu papel ao abrir o Bolla.</p>
           <div class="hero-proof"><span class="avatar-stack"><b>🎉</b><b>🎱</b><b>✨</b></span><span>Simples de organizar. Fácil de jogar.</span></div>
         </div>
         <div class="hero-art" aria-label="Ilustração de bolas coloridas de bingo">
@@ -193,7 +198,13 @@ async function askRoomCode() {
     inputAttributes: { maxlength: 6, autocapitalize: "characters" }
   });
   if (value) {
-    window.location.href = `?view=player&room=${encodeURIComponent(value.trim().toUpperCase())}`;
+    const code = value.trim().toUpperCase();
+    const saved = loadRoom();
+    if (saved?.code === code && saved.started && saved.hostPeerId) {
+      window.location.href = `?view=player&room=${encodeURIComponent(code)}&host=${encodeURIComponent(saved.hostPeerId)}`;
+      return;
+    }
+    Swal.fire("Sala não encontrada neste navegador", "Para entrar em outro dispositivo, use o QR Code ou o link completo da sala. O código sozinho não localiza a conexão entre dispositivos.", "info");
   }
 }
 
@@ -545,7 +556,7 @@ function renderPlayerScreen() {
     <main class="player-page container">
       <div class="player-topline"><a href="./" class="brand"><span class="brand-mark"><i class="bi bi-circle-fill"></i><i class="bi bi-stars"></i></span><span>bolla<span class="brand-dot">.</span></span></a><span class="status-chip ${knownRoom.status}"><i></i>${({waiting:"Aguardando",playing:"Em andamento",paused:"Pausado",finished:"Finalizado"})[knownRoom.status]}</span></div>
       <section class="player-heading"><span class="section-kicker">SALA ${knownRoom.code}</span><h1>Boa sorte,<br/><span class="text-gradient">jogador!</span></h1><p>${escapeHtml(knownRoom.title)} · Prêmio: ${escapeHtml(knownRoom.prize)}</p></section>
-      <section class="player-card-panel"><div class="player-card-head"><div><span class="section-kicker">SUA CARTELA</span><h2>Marque seus números</h2></div><button class="btn btn-soft rounded-pill" id="new-card"><i class="bi bi-arrow-repeat me-1"></i>Nova cartela</button></div><div class="bingo-card"><div class="bingo-letters">${LETTERS.map(letter=>`<b>${letter}</b>`).join("")}</div><div class="bingo-grid">${playerCard.card.flat().map(value=>`<button class="bingo-cell ${value==="★"?"free-cell":""} ${markedNumbers.has(value)?"marked":""} ${knownRoom.called.includes(value)?"called-number":""}" data-value="${value}" ${value==="★"?"disabled":""}>${value}</button>`).join("")}</div></div><div class="player-card-foot"><span><i class="bi bi-hand-index-thumb"></i> Toque para marcar</span><span id="marked-count">${markedNumbers.size} marcados</span></div><button class="btn btn-primary btn-lg rounded-pill w-100 mt-4" id="claim-bingo"><i class="bi bi-trophy me-2"></i>BINGO!</button></section>
+      <section class="player-card-panel"><div class="player-card-head"><div><span class="section-kicker">SUA CARTELA</span><h2>Marque seus números</h2></div><button class="btn btn-soft rounded-pill" id="new-card"><i class="bi bi-arrow-repeat me-1"></i>Nova cartela</button></div><div class="bingo-card"><div class="bingo-letters">${LETTERS.map(letter=>`<b>${letter}</b>`).join("")}</div><div class="bingo-grid">${playerCard.card.flat().map(value=>`<button class="bingo-cell ${value==="★"?"free-cell":""} ${markedNumbers.has(value)?"marked":""} ${knownRoom.called.includes(value)?"called-number":""} ${knownRoom.called.includes(value) && markedNumbers.has(value)?"confirmed-number":""}" data-value="${value}" ${value==="★"?"disabled":""}>${value}</button>`).join("")}</div></div><div class="player-card-foot"><span><i class="bi bi-hand-index-thumb"></i> Toque para marcar</span><span id="marked-count">${markedNumbers.size} marcados</span></div><button class="btn btn-primary btn-lg rounded-pill w-100 mt-4" id="claim-bingo"><i class="bi bi-trophy me-2"></i>BINGO!</button></section>
       ${renderShowdownPlayer(knownRoom)}
       <section class="player-recent"><span class="section-kicker">ÚLTIMOS NÚMEROS</span><div class="history-list">${knownRoom.called.slice(-5).reverse().map((n,i)=>`<div class="history-ball ${i===0?"latest":""}"><small>${getLetter(n)}</small><b>${n}</b></div>`).join("") || '<span class="history-empty">Aguardando o primeiro sorteio.</span>'}</div></section>
       <div class="demo-warning"><i class="bi bi-wifi"></i><span>Conectado diretamente ao organizador. Sorteios sincronizados em tempo real.</span></div>
@@ -563,6 +574,7 @@ function renderPlayerScreen() {
       }
       if (markedNumbers.has(value)) markedNumbers.delete(value); else markedNumbers.add(value);
       cell.classList.toggle("marked", markedNumbers.has(value));
+      cell.classList.toggle("confirmed-number", markedNumbers.has(value));
       document.querySelector("#marked-count").textContent = `${markedNumbers.size} marcados`;
     });
   });
@@ -580,12 +592,12 @@ function renderPlayerScreen() {
 }
 
 if (isPlayerRoute) renderPlayer();
-else if (room?.started) {
+else if (isHostRoute && room?.started) {
   startHostNetwork().then(() => { saveRoom(); renderHost(); }).catch(error => {
     console.error("Could not restore host connection:", error);
     renderHost();
     Swal.fire("Reconecte a sala", "Não foi possível reabrir a conexão. Crie uma nova sala para gerar outro QR Code.", "warning");
   });
 }
-else if (room) renderHost();
+else if (isHostRoute && room) renderHost();
 else renderLanding();
