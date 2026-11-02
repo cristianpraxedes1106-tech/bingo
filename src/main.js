@@ -427,5 +427,12 @@ function renderPlayerScreen() {
 }
 
 if (isPlayerRoute) renderPlayer();
+else if (room?.started) {
+  startHostNetwork().then(() => { saveRoom(); renderHost(); }).catch(error => {
+    console.error("Could not restore host connection:", error);
+    renderHost();
+    Swal.fire("Reconecte a sala", "Não foi possível reabrir a conexão. Crie uma nova sala para gerar outro QR Code.", "warning");
+  });
+}
 else if (room) renderHost();
 else renderLanding();
