@@ -1,0 +1,23 @@
+{
+  "name": "bolla-bingo",
+  "private": true,
+  "version": "0.1.0",
+  "type": "module",
+  "scripts": {
+    "dev": "vite",
+    "build": "vite build",
+    "preview": "vite preview"
+  },
+  "dependencies": {
+    "@supabase/supabase-js": "^2.57.4",
+    "bootstrap": "6.0.0-alpha.1",
+    "bootstrap-icons": "^1.13.1",
+    "gsap": "^3.13.0",
+    "html5-qrcode": "^2.3.8",
+    "qrcode": "^1.5.4",
+    "sweetalert2": "^11.23.0"
+  },
+  "devDependencies": {
+    "vite": "^7.1.7"
+  }
+}
