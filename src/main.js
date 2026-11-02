@@ -3,6 +3,7 @@ import "bootstrap-icons/font/bootstrap-icons.css";
 import "bootstrap";
 import "./styles.css";
 import QRCode from "qrcode";
+import Peer from "peerjs";
 import Swal from "sweetalert2";
 import { gsap } from "gsap";
 import { createCard, createDrawPool, drawNumber, getLetter, hasBingo, LETTERS } from "./lib/bingo.js";
@@ -15,6 +16,11 @@ let room = loadRoom();
 let playerCard = loadPlayerCard();
 let markedNumbers = new Set();
 let scanner = null;
+let hostPeer = null;
+let playerPeer = null;
+let playerConnection = null;
+let remoteRoom = null;
+const playerConnections = new Set();
 
 function loadRoom() {
   try {
@@ -64,7 +70,38 @@ function createRoom() {
 }
 
 function roomUrl() {
-  return new URL(`?view=player&room=${room.code}`, window.location.href).toString();
+  const url = new URL(window.location.href);
+  url.search = new URLSearchParams({ view: "player", room: room.code, host: room.hostPeerId || "" }).toString();
+  return url.toString();
+}
+function publicRoomState() {
+  return { code: room.code, title: room.title, prize: room.prize, mode: room.mode, status: room.status, started: room.started, called: room.called };
+}
+function broadcastRoomState() {
+  const message = { type: "state", room: publicRoomState() };
+  for (const connection of playerConnections) if (connection.open) connection.send(message);
+}
+async function startHostNetwork() {
+  if (hostPeer) hostPeer.destroy();
+  const peerId = `bolla-${room.code.toLowerCase()}-${Math.random().toString(36).slice(2, 7)}`;
+  hostPeer = new Peer(peerId);
+  await new Promise((resolve, reject) => {
+    hostPeer.once("open", id => { room.hostPeerId = id; resolve(); });
+    hostPeer.once("error", reject);
+  });
+  hostPeer.on("connection", connection => {
+    playerConnections.add(connection);
+    connection.on("open", () => connection.send({ type: "state", room: publicRoomState() }));
+    connection.on("data", message => {
+      if (message?.type === "claim" && Array.isArray(message.card)) {
+        const valid = hasBingo(message.card, room.called, room.mode);
+        connection.send({ type: "claim-result", valid });
+        if (valid) Swal.fire({ title: "BINGO anunciado!", text: "Um participante completou o padrão vencedor.", icon: "success" });
+      }
+    });
+    connection.on("close", () => playerConnections.delete(connection));
+    connection.on("error", () => playerConnections.delete(connection));
+  });
 }
 
 function renderShell(content, active = "host") {
@@ -235,6 +272,17 @@ function bindHostEvents() {
         icon:"question", showCancelButton:true, confirmButtonText:"Iniciar sala", cancelButtonText:"Voltar e revisar"
       });
       if (!result.isConfirmed) return;
+      startButton.disabled = true;
+      startButton.innerHTML = '<span class="spinner-border spinner-border-sm me-2"></span>Conectando celulares...';
+      try { await startHostNetwork(); }
+      catch (error) {
+        console.error("PeerJS host error:", error);
+        if (hostPeer) hostPeer.destroy();
+        hostPeer = null;
+        startButton.disabled = false;
+        startButton.innerHTML = '<i class="bi bi-play-fill me-2"></i>Salvar e iniciar sala';
+        return Swal.fire("Não foi possível abrir a sala", "Verifique sua internet e tente novamente. O serviço público de conexão PeerJS pode estar indisponível.", "error");
+      }
       room.started = true;
       room.status = "waiting";
       saveRoom();
@@ -246,13 +294,13 @@ function bindHostEvents() {
   document.querySelector("#draw-now").addEventListener("click", drawNext);
   document.querySelector("#toggle-pause").addEventListener("click", () => {
     room.status = room.status === "paused" ? "playing" : "paused";
-    saveRoom(); renderHost();
+    saveRoom(); broadcastRoomState(); renderHost();
   });
   document.querySelector("#save-settings").addEventListener("click", () => {
     room.title = document.querySelector("#event-title").value.trim() || "Meu bingo";
     room.prize = document.querySelector("#event-prize").value.trim() || "Prêmio surpresa";
     room.mode = document.querySelector("#game-mode").value;
-    saveRoom(); renderHost();
+    saveRoom(); broadcastRoomState(); renderHost();
     Swal.fire({ toast:true, position:"top-end", icon:"success", title:"Configurações salvas", showConfirmButton:false, timer:1800 });
   });
   document.querySelector("#copy-code").addEventListener("click", () => copyText(room.code, "Código copiado!"));
@@ -290,6 +338,7 @@ function drawNext() {
   }
   room.called.push(number);
   saveRoom();
+  broadcastRoomState();
   renderHost();
   gsap.fromTo("#draw-ball", { scale: .72, rotation: -16, opacity: .5 }, { scale: 1, rotation: 0, opacity: 1, duration: .55, ease: "back.out(1.8)" });
   document.querySelector("#draw-caption").textContent = `${getLetter(number)}-${number} foi sorteado!`;
@@ -316,39 +365,64 @@ async function copyText(value, message) {
 
 function renderPlayer() {
   const code = (params.get("room") || "").toUpperCase();
-  const knownRoom = room?.code === code ? room : null;
-  if (!knownRoom) {
-    renderShell(`<main class="player-page container"><div class="player-card-panel text-center"><div class="player-icon">🎱</div><span class="section-kicker">ENTRAR NA PARTIDA</span><h1>Encontre sua<br/><span class="text-gradient">sala de bingo.</span></h1><p>Este link ainda não está conectado a uma sala compartilhada. Peça ao organizador para abrir a partida neste mesmo dispositivo durante a demonstração.</p><a href="./" class="btn btn-primary rounded-pill px-4">Voltar ao início</a></div></main>`, "player");
+  const hostId = params.get("host");
+  if (!hostId) {
+    renderShell(`<main class="player-page container"><div class="player-card-panel text-center"><div class="player-icon">🎱</div><span class="section-kicker">ENTRAR NA PARTIDA</span><h1>Encontre sua<br/><span class="text-gradient">sala de bingo.</span></h1><p>Este QR Code não contém o identificador do anfitrião. Peça um novo QR Code ao organizador.</p><a href="./" class="btn btn-primary rounded-pill px-4">Voltar ao início</a></div></main>`, "player");
     return;
   }
-  if (!playerCard || playerCard.roomCode !== code) {
-    playerCard = { roomCode: code, name: "Jogador", card: createCard() };
-    savePlayerCard();
-  }
-  renderShell(`
+  if (playerPeer) playerPeer.destroy();
+  renderShell(\`<main class="player-page container"><div class="player-card-panel text-center"><div class="player-icon">🎱</div><span class="section-kicker">CONECTANDO À SALA</span><h1>Preparando sua<br/><span class="text-gradient">cartela...</span></h1><p>Conectando seu celular ao organizador. Isso pode levar alguns segundos.</p><div class="spinner-border mt-3" role="status"></div></div></main>\`, "player");
+  playerPeer = new Peer();
+  playerPeer.on("open", () => {
+    playerConnection = playerPeer.connect(hostId, { reliable: true });
+    playerConnection.on("data", message => {
+      if (message?.type === "state") {
+        remoteRoom = message.room;
+        if (!playerCard || playerCard.roomCode !== code) {
+          playerCard = { roomCode: code, name: "Jogador", card: createCard() };
+          savePlayerCard();
+        }
+        renderPlayerScreen();
+      } else if (message?.type === "claim-result") {
+        Swal.fire(message.valid ? { title:"BINGO!", text:"Seu padrão foi confirmado pelo organizador!", icon:"success" } : { title:"Ainda não foi!", text:"Sua cartela ainda não completou o padrão vencedor.", icon:"info" });
+      }
+    });
+    playerConnection.on("error", showPlayerConnectionError);
+    playerConnection.on("close", showPlayerConnectionError);
+  });
+  playerPeer.on("error", error => { console.error("PeerJS player error:", error); showPlayerConnectionError(); });
+}
+
+function showPlayerConnectionError() {
+  renderShell(\`<main class="player-page container"><div class="player-card-panel text-center"><div class="player-icon">📡</div><span class="section-kicker">SALA NÃO ENCONTRADA</span><h1>Ops! A conexão<br/><span class="text-gradient">caiu.</span></h1><p>Peça ao organizador para manter a tela aberta e gerar um novo QR Code. Confira se os dois dispositivos têm internet.</p><a href="./" class="btn btn-primary rounded-pill px-4">Voltar ao início</a></div></main>\`, "player");
+}
+
+function renderPlayerScreen() {
+  const knownRoom = remoteRoom;
+  if (!knownRoom || !playerCard) return;
+  renderShell(\`
     <main class="player-page container">
-      <div class="player-topline"><a href="./" class="brand"><span class="brand-mark"><i class="bi bi-circle-fill"></i><i class="bi bi-stars"></i></span><span>bolla<span class="brand-dot">.</span></span></a><span class="status-chip ${knownRoom.status}"><i></i>${statusLabel()}</span></div>
-      <section class="player-heading"><span class="section-kicker">SALA ${knownRoom.code}</span><h1>Boa sorte,<br/><span class="text-gradient">jogador!</span></h1><p>${escapeHtml(knownRoom.title)} · Prêmio: ${escapeHtml(knownRoom.prize)}</p></section>
-      <section class="player-card-panel"><div class="player-card-head"><div><span class="section-kicker">SUA CARTELA</span><h2>Marque seus números</h2></div><button class="btn btn-soft rounded-pill" id="new-card"><i class="bi bi-arrow-repeat me-1"></i>Nova cartela</button></div><div class="bingo-card"><div class="bingo-letters">${LETTERS.map(letter=>`<b>${letter}</b>`).join("")}</div><div class="bingo-grid">${playerCard.card.flat().map((value,index)=>`<button class="bingo-cell ${value==="★"?"free-cell":""} ${markedNumbers.has(value)?"marked":""}" data-value="${value}" ${value==="★"?"disabled":""}>${value}</button>`).join("")}</div></div><div class="player-card-foot"><span><i class="bi bi-hand-index-thumb"></i> Toque para marcar</span><span id="marked-count">${markedNumbers.size} marcados</span></div><button class="btn btn-primary btn-lg rounded-pill w-100 mt-4" id="claim-bingo"><i class="bi bi-trophy me-2"></i>BINGO!</button></section>
-      <section class="player-recent"><span class="section-kicker">ÚLTIMOS NÚMEROS</span><div class="history-list">${knownRoom.called.slice(-5).reverse().map((n,i)=>`<div class="history-ball ${i===0?"latest":""}"><small>${getLetter(n)}</small><b>${n}</b></div>`).join("") || '<span class="history-empty">Aguardando o primeiro sorteio.</span>'}</div></section>
-      <div class="demo-warning"><i class="bi bi-info-circle"></i><span>Esta é uma demonstração local. O modo multiplayer será conectado ao servidor na próxima etapa.</span></div>
-    </main>`, "player");
+      <div class="player-topline"><a href="./" class="brand"><span class="brand-mark"><i class="bi bi-circle-fill"></i><i class="bi bi-stars"></i></span><span>bolla<span class="brand-dot">.</span></span></a><span class="status-chip \${knownRoom.status}"><i></i>\${({waiting:"Aguardando",playing:"Em andamento",paused:"Pausado",finished:"Finalizado"})[knownRoom.status]}</span></div>
+      <section class="player-heading"><span class="section-kicker">SALA \${knownRoom.code}</span><h1>Boa sorte,<br/><span class="text-gradient">jogador!</span></h1><p>\${escapeHtml(knownRoom.title)} · Prêmio: \${escapeHtml(knownRoom.prize)}</p></section>
+      <section class="player-card-panel"><div class="player-card-head"><div><span class="section-kicker">SUA CARTELA</span><h2>Marque seus números</h2></div><button class="btn btn-soft rounded-pill" id="new-card"><i class="bi bi-arrow-repeat me-1"></i>Nova cartela</button></div><div class="bingo-card"><div class="bingo-letters">\${LETTERS.map(letter=>\`<b>\${letter}</b>\`).join("")}</div><div class="bingo-grid">\${playerCard.card.flat().map(value=>\`<button class="bingo-cell \${value==="★"?"free-cell":""} \${markedNumbers.has(value)?"marked":""}" data-value="\${value}" \${value==="★"?"disabled":""}>\${value}</button>\`).join("")}</div></div><div class="player-card-foot"><span><i class="bi bi-hand-index-thumb"></i> Toque para marcar</span><span id="marked-count">\${markedNumbers.size} marcados</span></div><button class="btn btn-primary btn-lg rounded-pill w-100 mt-4" id="claim-bingo"><i class="bi bi-trophy me-2"></i>BINGO!</button></section>
+      <section class="player-recent"><span class="section-kicker">ÚLTIMOS NÚMEROS</span><div class="history-list">\${knownRoom.called.slice(-5).reverse().map((n,i)=>\`<div class="history-ball \${i===0?"latest":""}"><small>\${getLetter(n)}</small><b>\${n}</b></div>\`).join("") || '<span class="history-empty">Aguardando o primeiro sorteio.</span>'}</div></section>
+      <div class="demo-warning"><i class="bi bi-wifi"></i><span>Conectado diretamente ao organizador. Sorteios sincronizados em tempo real.</span></div>
+    </main>\`, "player");
   document.querySelectorAll(".bingo-cell:not(.free-cell)").forEach(cell => {
     cell.addEventListener("click", () => {
       const value = Number(cell.dataset.value);
       if (markedNumbers.has(value)) markedNumbers.delete(value); else markedNumbers.add(value);
       cell.classList.toggle("marked", markedNumbers.has(value));
-      document.querySelector("#marked-count").textContent = `${markedNumbers.size} marcados`;
+      document.querySelector("#marked-count").textContent = \`\${markedNumbers.size} marcados\`;
       if (navigator.vibrate) navigator.vibrate(35);
     });
   });
   document.querySelector("#new-card").addEventListener("click", () => {
-    playerCard.card = createCard(); markedNumbers.clear(); savePlayerCard(); renderPlayer();
+    playerCard.card = createCard(); markedNumbers.clear(); savePlayerCard(); renderPlayerScreen();
   });
   document.querySelector("#claim-bingo").addEventListener("click", () => {
-    const allCalled = knownRoom.called;
-    const result = hasBingo(playerCard.card, allCalled, knownRoom.mode);
-    Swal.fire(result ? { title:"BINGO!", text:"Padrão completo nesta demonstração. O host ainda precisa validar o resultado.", icon:"success" } : { title:"Ainda não foi!", text:"Sua cartela ainda não completou o padrão vencedor.", icon:"info" });
+    if (!playerConnection?.open) return showPlayerConnectionError();
+    playerConnection.send({ type: "claim", card: playerCard.card });
   });
 }
 
